@@ -17,9 +17,6 @@ from app import (
     BOOKMAKERS
 )
 
-# Importar configuração do banco
-from config.database import supabase
-
 # Configuração da página (DEVE SER A PRIMEIRA CHAMADA STREAMLIT)
 st.set_page_config(
     page_title="Odds de Futebol",
@@ -224,8 +221,6 @@ if 'estatisticas_carregadas' not in st.session_state:
     st.session_state.estatisticas_carregadas = False
 if 'time_selecionado_modal' not in st.session_state:
     st.session_state.time_selecionado_modal = None
-if 'comparacao_modal' not in st.session_state:
-    st.session_state.comparacao_modal = None
 if 'selecoes_manuais' not in st.session_state:
     st.session_state.selecoes_manuais = set()
 
@@ -329,624 +324,83 @@ def processar_dataframe_para_exibicao(df):
     return df_display
 
 
-def buscar_estatisticas_temporada_completa(team_id, season):
-    """Busca estatísticas agregadas da temporada completa usando a view do banco"""
-    try:
-        # Primeiro tentar usar a view otimizada
-        resultado = supabase.table('v_estatisticas_temporada').select("*").eq('time_id', team_id).eq('temporada',
-                                                                                                     season).execute()
-
-        if resultado.data:
-            # Dados já agregados pela view
-            stats = resultado.data[0]
-            return stats
-
-        # Fallback: agregar manualmente se a view não existir
-        resultado = supabase.table('estatisticas_times').select("*").eq('time_id', team_id).eq('temporada',
-                                                                                               season).execute()
-
-        if not resultado.data:
-            return None
-
-        # Agregar dados de todas as ligas manualmente
-        stats_agregadas = {
-            'jogos_total': 0,
-            'vitorias_total': 0,
-            'empates_total': 0,
-            'derrotas_total': 0,
-            'gols_marcados_total': 0,
-            'gols_sofridos_total': 0,
-            'jogos_sem_marcar': 0,
-            'jogos_sem_sofrer': 0,
-            'cartoes_amarelos': 0,
-            'cartoes_vermelhos': 0,
-            'penaltis_marcados': 0,
-            'penaltis_perdidos': 0,
-            'ligas_participando': []
-        }
-
-        for stats in resultado.data:
-            stats_agregadas['jogos_total'] += stats.get('jogos_total', 0)
-            stats_agregadas['vitorias_total'] += stats.get('vitorias_total', 0)
-            stats_agregadas['empates_total'] += stats.get('empates_total', 0)
-            stats_agregadas['derrotas_total'] += stats.get('derrotas_total', 0)
-            stats_agregadas['gols_marcados_total'] += stats.get('gols_marcados_total', 0)
-            stats_agregadas['gols_sofridos_total'] += stats.get('gols_sofridos_total', 0)
-            stats_agregadas['jogos_sem_marcar'] += stats.get('jogos_sem_marcar', 0)
-            stats_agregadas['jogos_sem_sofrer'] += stats.get('jogos_sem_sofrer', 0)
-            stats_agregadas['cartoes_amarelos'] += stats.get('cartoes_amarelos', 0)
-            stats_agregadas['cartoes_vermelhos'] += stats.get('cartoes_vermelhos', 0)
-            stats_agregadas['penaltis_marcados'] += stats.get('penaltis_marcados', 0)
-            stats_agregadas['penaltis_perdidos'] += stats.get('penaltis_perdidos', 0)
-            stats_agregadas['ligas_participando'].append(stats.get('liga_id'))
-
-        # Calcular médias e métricas derivadas
-        if stats_agregadas['jogos_total'] > 0:
-            stats_agregadas['media_gols_marcados'] = stats_agregadas['gols_marcados_total'] / stats_agregadas[
-                'jogos_total']
-            stats_agregadas['media_gols_sofridos'] = stats_agregadas['gols_sofridos_total'] / stats_agregadas[
-                'jogos_total']
-            stats_agregadas['aproveitamento_percentual'] = (stats_agregadas['vitorias_total'] * 3 + stats_agregadas[
-                'empates_total']) / (stats_agregadas['jogos_total'] * 3) * 100
-            stats_agregadas['clean_sheet_percentual'] = (stats_agregadas['jogos_sem_sofrer'] / stats_agregadas[
-                'jogos_total']) * 100
-            stats_agregadas['eficiencia_ofensiva_percentual'] = ((stats_agregadas['jogos_total'] - stats_agregadas[
-                'jogos_sem_marcar']) / stats_agregadas['jogos_total']) * 100
-        else:
-            stats_agregadas['media_gols_marcados'] = 0
-            stats_agregadas['media_gols_sofridos'] = 0
-            stats_agregadas['aproveitamento_percentual'] = 0
-            stats_agregadas['clean_sheet_percentual'] = 0
-            stats_agregadas['eficiencia_ofensiva_percentual'] = 0
-
-        stats_agregadas['total_ligas'] = len(set(stats_agregadas['ligas_participando']))
-        stats_agregadas['saldo_gols'] = stats_agregadas['gols_marcados_total'] - stats_agregadas['gols_sofridos_total']
-
-        return stats_agregadas
-
-    except Exception as e:
-        print(f"Erro ao buscar estatísticas da temporada: {str(e)}")
-        return None
-
-
-def buscar_nome_liga(liga_id):
-    """Busca o nome da liga por ID"""
-    try:
-        resultado = supabase.table('ligas').select("nome").eq('id', liga_id).execute()
-        if resultado.data:
-            return resultado.data[0]['nome']
-        return f"Liga {liga_id}"
-    except:
-        return f"Liga {liga_id}"
-
-
-def criar_card_estatisticas(titulo, stats, cor_primaria="#007bff"):
-    """Cria um card visual para exibir estatísticas"""
-    if not stats:
-        return f"""
-        <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); 
-                    border: 1px solid #dee2e6; border-radius: 12px; padding: 20px; margin: 10px 0;">
-            <h4 style="color: #6c757d; margin-bottom: 15px;">{titulo}</h4>
-            <p style="color: #6c757d;">Dados não disponíveis</p>
-        </div>
-        """
-
-    # Calcular aproveitamento se não estiver disponível
-    aproveitamento = stats.get('aproveitamento_percentual')
-    if aproveitamento is None and stats.get('jogos_total', 0) > 0:
-        aproveitamento = ((stats.get('vitorias_total', 0) * 3 + stats.get('empates_total', 0)) / (
-                    stats.get('jogos_total', 1) * 3)) * 100
-
-    # Informações extras
-    info_extra = ""
-    if 'total_ligas' in stats and stats.get('total_ligas', 0) > 1:
-        info_extra = f'<div style="margin-top: 15px; padding: 10px; background: rgba(0,123,255,0.1); border-radius: 6px; text-align: center;"><small style="color: #007bff;">🏆 Participando em {stats.get("total_ligas", 1)} liga(s) nesta temporada</small></div>'
-
-    if 'saldo_gols' in stats:
-        saldo_color = "#28a745" if stats.get('saldo_gols', 0) >= 0 else "#dc3545"
-        saldo_prefix = "+" if stats.get('saldo_gols', 0) > 0 else ""
-        info_extra += f'<div style="margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.05); border-radius: 6px; text-align: center;"><small style="color: {saldo_color}; font-weight: 600;">Saldo: {saldo_prefix}{stats.get("saldo_gols", 0)} gols</small></div>'
-
-    return f"""
-    <div style="background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%); 
-                border: 1px solid {cor_primaria}; border-radius: 12px; padding: 20px; margin: 10px 0;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.1); transition: transform 0.2s ease;">
-        <h4 style="color: {cor_primaria}; margin-bottom: 15px; font-weight: 600; 
-                   border-bottom: 2px solid {cor_primaria}; padding-bottom: 8px;">{titulo}</h4>
-
-        <!-- Resumo Principal -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 20px;">
-            <div style="text-align: center; background: rgba(0,123,255,0.1); padding: 12px; border-radius: 8px;">
-                <div style="font-size: 24px; font-weight: bold; color: #007bff;">{stats.get('jogos_total', 0)}</div>
-                <div style="font-size: 12px; color: #6c757d;">JOGOS</div>
-            </div>
-            <div style="text-align: center; background: rgba(40,167,69,0.1); padding: 12px; border-radius: 8px;">
-                <div style="font-size: 24px; font-weight: bold; color: #28a745;">{stats.get('vitorias_total', 0)}</div>
-                <div style="font-size: 12px; color: #6c757d;">VITÓRIAS</div>
-            </div>
-            <div style="text-align: center; background: rgba(255,193,7,0.1); padding: 12px; border-radius: 8px;">
-                <div style="font-size: 24px; font-weight: bold; color: #ffc107;">{stats.get('empates_total', 0)}</div>
-                <div style="font-size: 12px; color: #6c757d;">EMPATES</div>
-            </div>
-            <div style="text-align: center; background: rgba(220,53,69,0.1); padding: 12px; border-radius: 8px;">
-                <div style="font-size: 24px; font-weight: bold; color: #dc3545;">{stats.get('derrotas_total', 0)}</div>
-                <div style="font-size: 12px; color: #6c757d;">DERROTAS</div>
-            </div>
-        </div>
-
-        <!-- Aproveitamento em destaque -->
-        {f'<div style="text-align: center; background: linear-gradient(135deg, {cor_primaria}20, {cor_primaria}10); padding: 15px; border-radius: 10px; margin-bottom: 20px;"><div style="font-size: 28px; font-weight: bold; color: {cor_primaria};">{aproveitamento:.1f}%</div><div style="font-size: 14px; color: #495057; font-weight: 500;">APROVEITAMENTO</div></div>' if aproveitamento is not None else ''}
-
-        <!-- Gols e Médias -->
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-            <h6 style="color: #495057; margin-bottom: 10px;">⚽ Estatísticas de Gols</h6>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; text-align: center;">
-                <div>
-                    <div style="font-weight: bold; color: #28a745;">{stats.get('gols_marcados_total', 0)}</div>
-                    <small style="color: #6c757d;">Gols Feitos</small>
-                </div>
-                <div>
-                    <div style="font-weight: bold; color: #dc3545;">{stats.get('gols_sofridos_total', 0)}</div>
-                    <small style="color: #6c757d;">Gols Sofridos</small>
-                </div>
-                <div>
-                    <div style="font-weight: bold; color: #17a2b8;">{stats.get('media_gols_marcados', 0):.1f}</div>
-                    <small style="color: #6c757d;">Média/Jogo</small>
-                </div>
-                <div>
-                    <div style="font-weight: bold; color: #fd7e14;">{stats.get('media_gols_sofridos', 0):.1f}</div>
-                    <small style="color: #6c757d;">Sofridos/Jogo</small>
-                </div>
-            </div>
-        </div>
-
-        <!-- Outras Estatísticas -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div style="background: #e9ecef; padding: 12px; border-radius: 8px;">
-                <h6 style="color: #495057; margin-bottom: 8px;">🎯 Eficiência</h6>
-                <div style="font-size: 14px;">
-                    <div>Clean Sheets: <strong>{stats.get('jogos_sem_sofrer', 0)}</strong></div>
-                    <div>Não Marcou: <strong>{stats.get('jogos_sem_marcar', 0)}</strong></div>
-                    {f'<div>Clean Sheet %: <strong>{stats.get("clean_sheet_percentual", 0):.1f}%</strong></div>' if 'clean_sheet_percentual' in stats else ''}
-                </div>
-            </div>
-            <div style="background: #e9ecef; padding: 12px; border-radius: 8px;">
-                <h6 style="color: #495057; margin-bottom: 8px;">🃏 Disciplina</h6>
-                <div style="font-size: 14px;">
-                    <div>🟨 Amarelos: <strong>{stats.get('cartoes_amarelos', 0)}</strong></div>
-                    <div>🟥 Vermelhos: <strong>{stats.get('cartoes_vermelhos', 0)}</strong></div>
-                    <div>⚽ Pênaltis: <strong>{stats.get('penaltis_marcados', 0)}/{stats.get('penaltis_perdidos', 0)}</strong></div>
-                </div>
-            </div>
-        </div>
-
-        {info_extra}
-    </div>
-    """
-
-
-def criar_card_estatisticas_nativo(titulo, stats, cor="blue"):
-    """
-    Cria um card de estatísticas usando componentes nativos do Streamlit
-
-    Args:
-        titulo (str): Título do card
-        stats (dict): Dados das estatísticas
-        cor (str): Cor do tema (não usado, mantido para compatibilidade)
-    """
-    if not stats:
-        st.warning(f"📊 {titulo}: Dados não disponíveis")
-        return
-
-    with st.container():
-        st.markdown(f"#### 📊 {titulo}")
-
-        # Primeira linha de métricas
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("Jogos", stats.get('jogos_total', 0))
-        with col2:
-            st.metric("Vitórias", stats.get('vitorias_total', 0))
-        with col3:
-            st.metric("Empates", stats.get('empates_total', 0))
-        with col4:
-            st.metric("Derrotas", stats.get('derrotas_total', 0))
-
-        # Segunda linha de métricas
-        col5, col6, col7, col8 = st.columns(4)
-
-        with col5:
-            st.metric("Gols Feitos", stats.get('gols_marcados_total', 0))
-        with col6:
-            st.metric("Gols Sofridos", stats.get('gols_sofridos_total', 0))
-        with col7:
-            # Calcular aproveitamento
-            aproveitamento = 0
-            if stats.get('jogos_total', 0) > 0:
-                aproveitamento = ((stats.get('vitorias_total', 0) * 3 +
-                                   stats.get('empates_total', 0)) /
-                                  (stats.get('jogos_total', 1) * 3) * 100)
-            st.metric("Aproveitamento", f"{aproveitamento:.1f}%")
-        with col8:
-            saldo = stats.get('gols_marcados_total', 0) - stats.get('gols_sofridos_total', 0)
-            delta_text = "Positivo" if saldo > 0 else "Negativo" if saldo < 0 else "Neutro"
-            st.metric("Saldo de Gols", saldo, delta=delta_text)
-
-        # Terceira linha - estatísticas adicionais
-        if any(stats.get(key, 0) for key in ['jogos_sem_sofrer', 'jogos_sem_marcar', 'cartoes_amarelos']):
-            st.markdown("---")
-            col9, col10, col11, col12 = st.columns(4)
-
-            with col9:
-                st.metric("Clean Sheets", stats.get('jogos_sem_sofrer', 0))
-            with col10:
-                st.metric("Não Marcou", stats.get('jogos_sem_marcar', 0))
-            with col11:
-                st.metric("🟨 Amarelos", stats.get('cartoes_amarelos', 0))
-            with col12:
-                st.metric("🟥 Vermelhos", stats.get('cartoes_vermelhos', 0))
-
-
 def mostrar_modal_estatisticas(time_id, time_nome, liga_id, temporada):
     """Mostra modal com estatísticas detalhadas do time"""
 
-    @st.dialog(f"📊 Estatísticas Detalhadas - {time_nome} (Temporada {temporada})",width="large")
+    @st.dialog(f"📊 Estatísticas Detalhadas - {time_nome}")
     def modal_estatisticas():
-        # Buscar dados da liga específica
-        stats_liga = buscar_ou_salvar_estatisticas(time_id, liga_id, temporada)
+        stats = buscar_ou_salvar_estatisticas(time_id, liga_id, temporada)
 
-        # Buscar dados da temporada completa
-        stats_temporada = buscar_estatisticas_temporada_completa(time_id, temporada)
+        if stats:
+            # Container principal
+            st.markdown("### 📈 Resumo da Temporada")
 
-        if not stats_liga and not stats_temporada:
-            st.warning("❌ Estatísticas não disponíveis para este time")
+            # Primeira linha - Informações principais
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                st.metric("🏟️ Total de Jogos", stats.get('jogos_total', 0))
+            with col2:
+                st.metric("⚽ Total de Gols", stats.get('gols_marcados_total', 0))
+            with col3:
+                st.metric("🚫 Gols Sofridos", stats.get('gols_sofridos_total', 0))
+            with col4:
+                st.metric("😔 Jogos sem Marcar", stats.get('jogos_sem_marcar', 0))
+
+            st.markdown("---")
+
+            # Segunda linha - Resultados detalhados
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.subheader("🏆 Resultados")
+                st.metric("Vitórias", stats.get('vitorias_total', 0),
+                          f"Casa: {stats.get('vitorias_casa', 0)} | Fora: {stats.get('vitorias_fora', 0)}")
+                st.metric("Empates", stats.get('empates_total', 0),
+                          f"Casa: {stats.get('empates_casa', 0)} | Fora: {stats.get('empates_fora', 0)}")
+                st.metric("Derrotas", stats.get('derrotas_total', 0),
+                          f"Casa: {stats.get('derrotas_casa', 0)} | Fora: {stats.get('derrotas_fora', 0)}")
+
+            with col2:
+                st.subheader("⚽ Gols Detalhados")
+                st.metric("Gols Marcados", stats.get('gols_marcados_total', 0),
+                          f"Casa: {stats.get('gols_marcados_casa', 0)} | Fora: {stats.get('gols_marcados_fora', 0)}")
+                st.metric("Gols Sofridos", stats.get('gols_sofridos_total', 0),
+                          f"Casa: {stats.get('gols_sofridos_casa', 0)} | Fora: {stats.get('gols_sofridos_fora', 0)}")
+                st.metric("Média Gols/Jogo", f"{stats.get('media_gols_marcados', 0):.2f}",
+                          f"Sofridos: {stats.get('media_gols_sofridos', 0):.2f}")
+
+            with col3:
+                st.subheader("📈 Estatísticas Especiais")
+                st.metric("Jogos sem Sofrer Gol", stats.get('jogos_sem_sofrer', 0))
+                st.metric("Ambos Marcam", stats.get('jogos_ambos_marcam', 0) if 'jogos_ambos_marcam' in stats else 0)
+                forma = stats.get('forma_recente', '')
+                if forma:
+                    forma_colorida = forma.replace('W', '🟢').replace('D', '🟡').replace('L', '🔴')
+                    st.write(f"**Forma Recente:** {forma_colorida}")
+
+            # Terceira linha - Cartões e Pênaltis
+            if stats.get('cartoes_amarelos', 0) > 0 or stats.get('cartoes_vermelhos', 0) > 0:
+                st.markdown("---")
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric("🟨 Cartões Amarelos", stats.get('cartoes_amarelos', 0))
+                with col2:
+                    st.metric("🟥 Cartões Vermelhos", stats.get('cartoes_vermelhos', 0))
+                with col3:
+                    st.metric("⚽ Pênaltis Marcados", stats.get('penaltis_marcados', 0))
+                with col4:
+                    st.metric("❌ Pênaltis Perdidos", stats.get('penaltis_perdidos', 0))
+
+            if st.button("Fechar", use_container_width=True):
+                st.rerun()
+        else:
+            st.warning("Estatísticas não disponíveis para este time")
             if st.button("Fechar"):
                 st.rerun()
-            return
-
-        # Abas para melhor organização
-        tab1, tab2 = st.tabs(["🏆 Liga Atual", "🌍 Temporada Completa"])
-
-        with tab1:
-            st.markdown("### 📈 Desempenho na Liga Atual")
-            if stats_liga:
-                nome_liga = buscar_nome_liga(liga_id)
-                card_html = criar_card_estatisticas(f"📈 {nome_liga}", stats_liga, "#28a745")
-                st.markdown(card_html, unsafe_allow_html=True)
-
-                # Informações adicionais da liga
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    if stats_liga.get('jogos_total', 0) > 0:
-                        st.metric("Aproveitamento Liga",
-                                  f"{((stats_liga.get('vitorias_total', 0) * 3 + stats_liga.get('empates_total', 0)) / (stats_liga.get('jogos_total', 1) * 3) * 100):.1f}%")
-                    else:
-                        st.metric("Aproveitamento Liga", "0.0%")
-
-                with col2:
-                    saldo = stats_liga.get('gols_marcados_total', 0) - stats_liga.get('gols_sofridos_total', 0)
-                    st.metric("Saldo de Gols", saldo,
-                              delta=f"{'Positivo' if saldo > 0 else 'Negativo' if saldo < 0 else 'Neutro'}")
-
-                with col3:
-                    st.metric("Jogos em Casa", f"{stats_liga.get('jogos_casa', 0)}")
-
-                with col4:
-                    st.metric("Jogos Fora", f"{stats_liga.get('jogos_fora', 0)}")
-
-            else:
-                st.info("📝 Dados da liga atual não disponíveis")
-
-        with tab2:
-            st.markdown("### 🏅 Desempenho Geral na Temporada")
-            if stats_temporada:
-                card_html = criar_card_estatisticas(f"🏅 Todas as Competições {temporada}", stats_temporada, "#007bff")
-                st.markdown(card_html, unsafe_allow_html=True)
-
-                # Comparação Liga vs Temporada
-                if stats_liga and stats_temporada.get('total_ligas', 0) > 1:
-                    st.markdown("---")
-                    st.markdown("#### ⚖️ Liga Atual vs Temporada Completa")
-
-                    col1, col2, col3, col4 = st.columns(4)
-
-                    with col1:
-                        liga_aproveit = ((stats_liga.get('vitorias_total', 0) * 3 + stats_liga.get('empates_total',
-                                                                                                   0)) / max(
-                            stats_liga.get('jogos_total', 1) * 3, 1) * 100)
-                        temp_aproveit = stats_temporada.get('aproveitamento_percentual', 0)
-
-                        st.metric(
-                            "Aproveitamento",
-                            f"{temp_aproveit:.1f}%",
-                            delta=f"{temp_aproveit - liga_aproveit:.1f}% vs liga atual"
-                        )
-
-                    with col2:
-                        st.metric(
-                            "Total de Jogos",
-                            stats_temporada.get('jogos_total', 0),
-                            delta=f"+{stats_temporada.get('jogos_total', 0) - stats_liga.get('jogos_total', 0)} jogos a mais"
-                        )
-
-                    with col3:
-                        st.metric(
-                            "Gols por Jogo",
-                            f"{stats_temporada.get('media_gols_marcados', 0):.1f}",
-                            delta=f"{stats_temporada.get('media_gols_marcados', 0) - stats_liga.get('media_gols_marcados', 0):.1f}" if stats_liga.get(
-                                'media_gols_marcados') else None
-                        )
-
-                    with col4:
-                        st.metric(
-                            "Competições",
-                            f"{stats_temporada.get('total_ligas', 1)} liga(s)",
-                            delta="múltiplas competições" if stats_temporada.get('total_ligas',
-                                                                                 1) > 1 else "competição única"
-                        )
-            else:
-                st.info("📝 Dados da temporada completa não disponíveis")
-
-        # Botão para fechar
-        st.markdown("---")
-        if st.button("✅ Fechar", use_container_width=True, type="primary"):
-            st.rerun()
 
     modal_estatisticas()
-
-
-def mostrar_modal_comparacao(time_casa_id, time_casa_nome, time_fora_id, time_fora_nome, liga_id, temporada):
-    """Mostra modal comparando dois times"""
-
-    @st.dialog(f"⚔️ Comparação: {time_casa_nome} × {time_fora_nome}", width="large")
-    def modal_comparacao():
-        # Buscar dados dos dois times
-        stats_casa_liga = buscar_ou_salvar_estatisticas(time_casa_id, liga_id, temporada)
-        stats_fora_liga = buscar_ou_salvar_estatisticas(time_fora_id, liga_id, temporada)
-
-        stats_casa_temp = buscar_estatisticas_temporada_completa(time_casa_id, temporada)
-        stats_fora_temp = buscar_estatisticas_temporada_completa(time_fora_id, temporada)
-
-        # Abas para diferentes visualizações
-        tab1, tab2, tab3 = st.tabs(["🏆 Liga Atual", "🌍 Temporada Completa", "⚖️ Comparação Direta"])
-
-        with tab1:
-            nome_liga = buscar_nome_liga(liga_id)
-            st.markdown(f"### 📊 Estatísticas na {nome_liga}")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                if stats_casa_liga:
-                    criar_card_estatisticas_nativo(f"🏠 {time_casa_nome}", stats_casa_liga, "green")
-                else:
-                    st.warning(f"Dados de {time_casa_nome} não disponíveis")
-
-            with col2:
-                if stats_fora_liga:
-                    criar_card_estatisticas_nativo(f"✈️ {time_fora_nome}", stats_fora_liga, "red")
-                else:
-                    st.warning(f"Dados de {time_fora_nome} não disponíveis")
-
-        with tab2:
-            st.markdown(f"### 🏅 Estatísticas da Temporada {temporada}")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                if stats_casa_temp:
-                    criar_card_estatisticas_nativo(f"🏠 {time_casa_nome}", stats_casa_temp, "green")
-                else:
-                    st.warning(f"Dados de temporada de {time_casa_nome} não disponíveis")
-
-            with col2:
-                if stats_fora_temp:
-                    criar_card_estatisticas_nativo(f"✈️ {time_fora_nome}", stats_fora_temp, "red")
-                else:
-                    st.warning(f"Dados de temporada de {time_fora_nome} não disponíveis")
-
-        with tab3:
-            st.markdown("### ⚔️ Análise Comparativa Detalhada")
-
-            # Escolher melhor conjunto de dados disponível
-            dados_casa = stats_casa_temp if stats_casa_temp else stats_casa_liga
-            dados_fora = stats_fora_temp if stats_fora_temp else stats_fora_liga
-
-            if dados_casa and dados_fora:
-                # Seção de vantagens
-                st.markdown("#### 🎯 Vantagens Competitivas")
-
-                # Calcular aproveitamentos
-                aproveit_casa = 0
-                aproveit_fora = 0
-
-                if 'aproveitamento_percentual' in dados_casa:
-                    aproveit_casa = dados_casa.get('aproveitamento_percentual', 0)
-                elif dados_casa.get('jogos_total', 0) > 0:
-                    aproveit_casa = (dados_casa.get('vitorias_total', 0) * 3 + dados_casa.get('empates_total', 0)) / (
-                                dados_casa.get('jogos_total', 1) * 3) * 100
-
-                if 'aproveitamento_percentual' in dados_fora:
-                    aproveit_fora = dados_fora.get('aproveitamento_percentual', 0)
-                elif dados_fora.get('jogos_total', 0) > 0:
-                    aproveit_fora = (dados_fora.get('vitorias_total', 0) * 3 + dados_fora.get('empates_total', 0)) / (
-                                dados_fora.get('jogos_total', 1) * 3) * 100
-
-                col1, col2, col3, col4 = st.columns(4)
-
-                with col1:
-                    melhor_aproveit = "🏠 Casa" if aproveit_casa > aproveit_fora else "✈️ Fora"
-                    st.metric(
-                        "Melhor Aproveitamento",
-                        melhor_aproveit,
-                        f"{max(aproveit_casa, aproveit_fora):.1f}%"
-                    )
-
-                with col2:
-                    melhor_ataque = "🏠 Casa" if dados_casa.get('media_gols_marcados', 0) > dados_fora.get(
-                        'media_gols_marcados', 0) else "✈️ Fora"
-                    st.metric(
-                        "Melhor Ataque",
-                        melhor_ataque,
-                        f"{max(dados_casa.get('media_gols_marcados', 0), dados_fora.get('media_gols_marcados', 0)):.1f} gols/jogo"
-                    )
-
-                with col3:
-                    melhor_defesa = "🏠 Casa" if dados_casa.get('media_gols_sofridos', 0) < dados_fora.get(
-                        'media_gols_sofridos', 0) else "✈️ Fora"
-                    st.metric(
-                        "Melhor Defesa",
-                        melhor_defesa,
-                        f"{min(dados_casa.get('media_gols_sofridos', 0), dados_fora.get('media_gols_sofridos', 0)):.1f} gols sofridos/jogo"
-                    )
-
-                with col4:
-                    clean_casa = dados_casa.get('jogos_sem_sofrer', 0) / max(dados_casa.get('jogos_total', 1), 1) * 100
-                    clean_fora = dados_fora.get('jogos_sem_sofrer', 0) / max(dados_fora.get('jogos_total', 1), 1) * 100
-
-                    melhor_clean = "🏠 Casa" if clean_casa > clean_fora else "✈️ Fora"
-                    st.metric(
-                        "Mais Clean Sheets",
-                        melhor_clean,
-                        f"{max(clean_casa, clean_fora):.1f}%"
-                    )
-
-                # Tabela comparativa detalhada
-                st.markdown("---")
-                st.markdown("#### 📋 Comparação Detalhada")
-
-                comparacao_data = {
-                    "Estatística": [
-                        "🏟️ Total de Jogos",
-                        "🏆 Vitórias",
-                        "🤝 Empates",
-                        "😞 Derrotas",
-                        "⚽ Gols Marcados",
-                        "🚫 Gols Sofridos",
-                        "📊 Média Gols/Jogo",
-                        "📊 Média Sofre/Jogo",
-                        "🎯 Clean Sheets",
-                        "😔 Não Marcou",
-                        "🟨 Cartões Amarelos",
-                        "🟥 Cartões Vermelhos",
-                        "💯 Aproveitamento (%)"
-                    ],
-                    f"🏠 {time_casa_nome}": [
-                        dados_casa.get('jogos_total', 0),
-                        dados_casa.get('vitorias_total', 0),
-                        dados_casa.get('empates_total', 0),
-                        dados_casa.get('derrotas_total', 0),
-                        dados_casa.get('gols_marcados_total', 0),
-                        dados_casa.get('gols_sofridos_total', 0),
-                        f"{dados_casa.get('media_gols_marcados', 0):.1f}",
-                        f"{dados_casa.get('media_gols_sofridos', 0):.1f}",
-                        dados_casa.get('jogos_sem_sofrer', 0),
-                        dados_casa.get('jogos_sem_marcar', 0),
-                        dados_casa.get('cartoes_amarelos', 0),
-                        dados_casa.get('cartoes_vermelhos', 0),
-                        f"{aproveit_casa:.1f}%"
-                    ],
-                    f"✈️ {time_fora_nome}": [
-                        dados_fora.get('jogos_total', 0),
-                        dados_fora.get('vitorias_total', 0),
-                        dados_fora.get('empates_total', 0),
-                        dados_fora.get('derrotas_total', 0),
-                        dados_fora.get('gols_marcados_total', 0),
-                        dados_fora.get('gols_sofridos_total', 0),
-                        f"{dados_fora.get('media_gols_marcados', 0):.1f}",
-                        f"{dados_fora.get('media_gols_sofridos', 0):.1f}",
-                        dados_fora.get('jogos_sem_sofrer', 0),
-                        dados_fora.get('jogos_sem_marcar', 0),
-                        dados_fora.get('cartoes_amarelos', 0),
-                        dados_fora.get('cartoes_vermelhos', 0),
-                        f"{aproveit_fora:.1f}%"
-                    ]
-                }
-
-                df_comparacao = pd.DataFrame(comparacao_data)
-
-                st.dataframe(
-                    df_comparacao,
-                    column_config={
-                        "Estatística": st.column_config.TextColumn("Estatística", width="medium"),
-                        f"🏠 {time_casa_nome}": st.column_config.TextColumn(f"🏠 {time_casa_nome}", width="medium"),
-                        f"✈️ {time_fora_nome}": st.column_config.TextColumn(f"✈️ {time_fora_nome}", width="medium"),
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
-
-                # Insights da análise
-                st.markdown("---")
-                st.markdown("#### 💡 Insights da Análise")
-
-                insights = []
-
-                # Análise de aproveitamento
-                if abs(aproveit_casa - aproveit_fora) > 10:
-                    melhor = time_casa_nome if aproveit_casa > aproveit_fora else time_fora_nome
-                    insights.append(
-                        f"🎯 **{melhor}** tem aproveitamento significativamente superior ({abs(aproveit_casa - aproveit_fora):.1f}% de diferença)")
-
-                # Análise de gols
-                diff_gols = abs(dados_casa.get('media_gols_marcados', 0) - dados_fora.get('media_gols_marcados', 0))
-                if diff_gols > 0.3:
-                    if dados_casa.get('media_gols_marcados', 0) > dados_fora.get('media_gols_marcados', 0):
-                        insights.append(
-                            f"⚽ **{time_casa_nome}** tem ataque superior, marcando {diff_gols:.1f} gols a mais por jogo")
-                    else:
-                        insights.append(
-                            f"⚽ **{time_fora_nome}** tem ataque superior, marcando {diff_gols:.1f} gols a mais por jogo")
-
-                # Análise de defesa
-                diff_def = abs(dados_casa.get('media_gols_sofridos', 0) - dados_fora.get('media_gols_sofridos', 0))
-                if diff_def > 0.3:
-                    if dados_casa.get('media_gols_sofridos', 0) < dados_fora.get('media_gols_sofridos', 0):
-                        insights.append(
-                            f"🛡️ **{time_casa_nome}** tem defesa mais sólida, sofrendo {diff_def:.1f} gols a menos por jogo")
-                    else:
-                        insights.append(
-                            f"🛡️ **{time_fora_nome}** tem defesa mais sólida, sofrendo {diff_def:.1f} gols a menos por jogo")
-
-                # Análise de disciplina
-                cartoes_casa = dados_casa.get('cartoes_amarelos', 0) + dados_casa.get('cartoes_vermelhos', 0) * 2
-                cartoes_fora = dados_fora.get('cartoes_amarelos', 0) + dados_fora.get('cartoes_vermelhos', 0) * 2
-
-                if abs(cartoes_casa - cartoes_fora) > 5:
-                    if cartoes_casa > cartoes_fora:
-                        insights.append(
-                            f"🟨 **{time_casa_nome}** tem mais problemas disciplinares ({cartoes_casa - cartoes_fora} cartões a mais)")
-                    else:
-                        insights.append(
-                            f"🟨 **{time_fora_nome}** tem mais problemas disciplinares ({cartoes_fora - cartoes_casa} cartões a mais)")
-
-                # Análise de clean sheets
-                if abs(clean_casa - clean_fora) > 10:
-                    melhor_clean_nome = time_casa_nome if clean_casa > clean_fora else time_fora_nome
-                    insights.append(
-                        f"🎯 **{melhor_clean_nome}** mantém a meta inviolada com mais frequência ({abs(clean_casa - clean_fora):.1f}% de diferença)")
-
-                if insights:
-                    for insight in insights:
-                        st.write(f"• {insight}")
-                else:
-                    st.info("• Os times apresentam desempenho equilibrado nas principais métricas analisadas")
-
-            else:
-                st.warning("⚠️ Dados insuficientes para comparação completa")
-
-                if not dados_casa:
-                    st.write(f"❌ Dados de **{time_casa_nome}** não disponíveis")
-                if not dados_fora:
-                    st.write(f"❌ Dados de **{time_fora_nome}** não disponíveis")
-
-        # Botão para fechar
-        st.markdown("---")
-        if st.button("✅ Fechar Comparação", use_container_width=True, type="primary"):
-            st.rerun()
-
-    modal_comparacao()
 
 
 def exportar_para_excel(df):
@@ -1052,7 +506,6 @@ if st.sidebar.button("🗑️ Limpar Cache"):
     st.session_state.estatisticas_carregadas = False
     st.session_state.selecoes_manuais = set()
     st.session_state.time_selecionado_modal = None
-    st.session_state.comparacao_modal = None
     st.sidebar.success("Cache limpo! Reiniciando a aplicação.")
     st.rerun()
 
@@ -1100,8 +553,6 @@ if btn_buscar_dados:
     st.session_state.estatisticas_carregadas = False
     st.session_state.jogos_selecionados = []
     st.session_state.selecoes_manuais = set()
-    st.session_state.time_selecionado_modal = None
-    st.session_state.comparacao_modal = None
 
     with st.spinner("🔄 Carregando jogos..."):
         dados_jogos = buscar_jogos_por_data(data_str)
@@ -1179,7 +630,6 @@ if st.session_state.dados_carregados:
             st.write("**Instruções:**")
             st.write("✓ = Marque os jogos para buscar estatísticas")
             st.write("🔗 = Clique nas linhas para ver estatísticas dos times")
-            st.write("⚔️ = Use 'Comparar Times' para ver ambos lado a lado")
             st.write("📊 = Clique em 'Buscar Estatísticas' após selecionar")
 
     # Processar DataFrame para exibição melhorada
@@ -1286,7 +736,7 @@ if st.session_state.dados_carregados:
             st.markdown("---")
             st.markdown("### 🔍 Time Selecionado - Escolha uma opção:")
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 if st.button(f"📊 Ver Estatísticas - {selected_row['time_casa']}", use_container_width=True):
                     st.session_state.time_selecionado_modal = {
@@ -1304,18 +754,6 @@ if st.session_state.dados_carregados:
                         'liga_id': selected_row['league_id'],
                         'temporada': selected_row['season'],
                         'nome': selected_row['time_fora']
-                    }
-                    st.rerun()
-
-            with col3:
-                if st.button(f"⚔️ Comparar Times", use_container_width=True, type="primary"):
-                    st.session_state.comparacao_modal = {
-                        'time_casa_id': selected_row['team_home_id'],
-                        'time_casa_nome': selected_row['time_casa'],
-                        'time_fora_id': selected_row['team_away_id'],
-                        'time_fora_nome': selected_row['time_fora'],
-                        'liga_id': selected_row['league_id'],
-                        'temporada': selected_row['season']
                     }
                     st.rerun()
 
@@ -1487,7 +925,7 @@ if st.session_state.dados_carregados:
             st.markdown("---")
             st.markdown("### 🔍 Linha Selecionada - Ver Estatísticas:")
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 if st.button(f"📊 {selected_row['time_casa']}", use_container_width=True, key="final_casa"):
                     st.session_state.time_selecionado_modal = {
@@ -1508,18 +946,6 @@ if st.session_state.dados_carregados:
                     }
                     st.rerun()
 
-            with col3:
-                if st.button(f"⚔️ Comparar Ambos", use_container_width=True, key="final_comparar", type="primary"):
-                    st.session_state.comparacao_modal = {
-                        'time_casa_id': selected_row['team_home_id'],
-                        'time_casa_nome': selected_row['time_casa'],
-                        'time_fora_id': selected_row['team_away_id'],
-                        'time_fora_nome': selected_row['time_fora'],
-                        'liga_id': selected_row['league_id'],
-                        'temporada': selected_row['season']
-                    }
-                    st.rerun()
-
     # Informações adicionais
     st.markdown("---")
     col_info1, col_info2 = st.columns(2)
@@ -1529,9 +955,8 @@ if st.session_state.dados_carregados:
             "- 📸 Escudos dos times nas colunas sem título\n"
             "- 🟢 Verde = Dados do time casa\n"
             "- 🔴 Vermelho = Dados do time fora\n"
-            "- 📊 Clique nas linhas para ver estatísticas individuais\n"
-            "- ⚔️ Use 'Comparar Times' para análise lado a lado\n"
-            "- ✓ Marque jogos para análise comparativa em lote"
+            "- 🔗 Clique nas linhas para ver estatísticas dos times\n"
+            "- ✓ Marque jogos para análise comparativa"
         )
     with col_info2:
         st.info(
@@ -1542,8 +967,7 @@ if st.session_state.dados_carregados:
         )
 
     if st.session_state.estatisticas_carregadas:
-        st.success(
-            "✅ Estatísticas carregadas! Clique nas linhas da tabela para ver detalhes individuais ou usar 'Comparar Times' para análise completa.")
+        st.success("✅ Estatísticas carregadas! Clique nas linhas da tabela para ver detalhes dos times.")
 
 else:
     st.info("👆 Clique em 'Buscar Jogos e Odds' para carregar os dados e começar a seleção.")
@@ -1558,16 +982,3 @@ if st.session_state.time_selecionado_modal:
         time['temporada']
     )
     st.session_state.time_selecionado_modal = None
-
-# Verificar se há comparação selecionada para mostrar modal
-if st.session_state.comparacao_modal:
-    comp = st.session_state.comparacao_modal
-    mostrar_modal_comparacao(
-        comp['time_casa_id'],
-        comp['time_casa_nome'],
-        comp['time_fora_id'],
-        comp['time_fora_nome'],
-        comp['liga_id'],
-        comp['temporada']
-    )
-    st.session_state.comparacao_modal = None
