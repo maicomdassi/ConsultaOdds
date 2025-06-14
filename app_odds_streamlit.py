@@ -4,8 +4,7 @@ from datetime import datetime, date
 import pytz
 import io
 import xlsxwriter
-import base64
-import streamlit.components.v1 as components
+
 
 # Importe apenas as funções necessárias do app.py
 from app import (
@@ -35,52 +34,52 @@ st.markdown("""
     /* Cores para colunas de times no DataFrame */
 
     /* Time Casa (colunas 5 e 6) - Escudo e Nome */
-    div[data-testid="stDataFrame"] tbody tr td:nth-child(5),
-    div[data-testid="stDataFrame"] tbody tr td:nth-child(6) {
+    div[data-testid="stDataFrame"] tbody tr td:nth-child(6),
+    div[data-testid="stDataFrame"] tbody tr td:nth-child(7) {
         background-color: rgba(76, 175, 80, 0.12) !important;
         border-left: 3px solid #4CAF50;
     }
 
-    div[data-testid="stDataFrame"] thead tr th:nth-child(5),
-    div[data-testid="stDataFrame"] thead tr th:nth-child(6) {
+    div[data-testid="stDataFrame"] thead tr th:nth-child(6),
+    div[data-testid="stDataFrame"] thead tr th:nth-child(7) {
         background-color: rgba(76, 175, 80, 0.25) !important;
         border-left: 3px solid #4CAF50;
         font-weight: bold;
     }
 
     /* Time Fora (colunas 7 e 8) - Escudo e Nome */
-    div[data-testid="stDataFrame"] tbody tr td:nth-child(7),
-    div[data-testid="stDataFrame"] tbody tr td:nth-child(8) {
+    div[data-testid="stDataFrame"] tbody tr td:nth-child(8),
+    div[data-testid="stDataFrame"] tbody tr td:nth-child(9) {
         background-color: rgba(244, 67, 54, 0.12) !important;
         border-left: 3px solid #F44336;
     }
 
-    div[data-testid="stDataFrame"] thead tr th:nth-child(7),
-    div[data-testid="stDataFrame"] thead tr th:nth-child(8) {
+    div[data-testid="stDataFrame"] thead tr th:nth-child(8),
+    div[data-testid="stDataFrame"] thead tr th:nth-child(9) {
         background-color: rgba(244, 67, 54, 0.25) !important;
         border-left: 3px solid #F44336;
         font-weight: bold;
     }
 
     /* Data Editor - cores para time casa e fora */
-    div[data-testid="data-editor"] [role="gridcell"]:nth-child(6),
-    div[data-testid="data-editor"] [role="gridcell"]:nth-child(7) {
+    div[data-testid="data-editor"] [role="gridcell"]:nth-child(7),
+    div[data-testid="data-editor"] [role="gridcell"]:nth-child(8) {
         background-color: rgba(76, 175, 80, 0.1) !important;
     }
 
-    div[data-testid="data-editor"] [role="gridcell"]:nth-child(8),
-    div[data-testid="data-editor"] [role="gridcell"]:nth-child(9) {
+    div[data-testid="data-editor"] [role="gridcell"]:nth-child(9),
+    div[data-testid="data-editor"] [role="gridcell"]:nth-child(10) {
         background-color: rgba(244, 67, 54, 0.1) !important;
     }
 
-    div[data-testid="data-editor"] [role="columnheader"]:nth-child(6),
-    div[data-testid="data-editor"] [role="columnheader"]:nth-child(7) {
+    div[data-testid="data-editor"] [role="columnheader"]:nth-child(7),
+    div[data-testid="data-editor"] [role="columnheader"]:nth-child(8) {
         background-color: rgba(76, 175, 80, 0.2) !important;
         font-weight: bold;
     }
 
-    div[data-testid="data-editor"] [role="columnheader"]:nth-child(8),
-    div[data-testid="data-editor"] [role="columnheader"]:nth-child(9) {
+    div[data-testid="data-editor"] [role="columnheader"]:nth-child(9),
+    div[data-testid="data-editor"] [role="columnheader"]:nth-child(10) {
         background-color: rgba(244, 67, 54, 0.2) !important;
         font-weight: bold;
     }
@@ -119,8 +118,8 @@ function applyTableColors() {
             headers.forEach((header, index) => {
                 const text = header.textContent || '';
 
-                // Time Casa (posições 4 e 5 - escudo e nome)
-                if (index === 4 || index === 5 || text.includes('Casa') || text.trim() === ' ') {
+                // Time Casa (posições 5 e 6 - escudo e nome)
+                if (index === 5 || index === 6 || text.includes('Casa') || text.trim() === ' ') {
                     header.style.backgroundColor = 'rgba(76, 175, 80, 0.25)';
                     header.style.borderLeft = '3px solid #4CAF50';
                     header.style.fontWeight = 'bold';
@@ -135,8 +134,8 @@ function applyTableColors() {
                     });
                 }
 
-                // Time Fora (posições 6 e 7 - escudo e nome)
-                if (index === 6 || index === 7 || text.includes('Fora') || text.trim() === '  ') {
+                // Time Fora (posições 7 e 8 - escudo e nome)
+                if (index === 7 || index === 8 || text.includes('Fora') || text.trim() === '  ') {
                     header.style.backgroundColor = 'rgba(244, 67, 54, 0.25)';
                     header.style.borderLeft = '3px solid #F44336';
                     header.style.fontWeight = 'bold';
@@ -230,11 +229,6 @@ if 'selecoes_manuais' not in st.session_state:
     st.session_state.selecoes_manuais = set()
 
 
-def criar_celula_time_com_logo(nome_time, logo_url, tipo_time="home"):
-    """Retorna apenas o nome do time, sem emojis"""
-    return nome_time
-
-
 def safe_format_odd(odd_value):
     """Formata odds de forma segura"""
     try:
@@ -261,7 +255,7 @@ def processar_dataframe_para_exibicao(df):
     df_display = df.copy()
 
     # Verificar se as colunas necessárias existem
-    required_columns = ['time_casa', 'time_fora', 'team_home_id', 'team_away_id', 'league_id', 'season']
+    required_columns = ['time_casa', 'time_fora', 'team_home_id', 'team_away_id', 'league_id', 'season', 'país', 'criterio_selecao']
     missing_columns = [col for col in required_columns if col not in df_display.columns]
     if missing_columns:
         st.warning(f"Colunas ausentes no DataFrame: {missing_columns}")
@@ -872,6 +866,8 @@ def mostrar_modal_comparacao(time_casa_id, time_casa_nome, time_fora_id, time_fo
                         "Estatística": st.column_config.TextColumn("Estatística", width="medium"),
                         f"🏠 {time_casa_nome}": st.column_config.TextColumn(f"🏠 {time_casa_nome}", width="medium"),
                         f"✈️ {time_fora_nome}": st.column_config.TextColumn(f"✈️ {time_fora_nome}", width="medium"),
+                        "Critério": st.column_config.TextColumn("Critério", help="Critério usado: 'Gols' (ambos marcam) ou 'Resultado/Gol' (favorito + gol)", width="medium"),
+
                     },
                     hide_index=True,
                     use_container_width=True
@@ -950,7 +946,7 @@ def mostrar_modal_comparacao(time_casa_id, time_casa_nome, time_fora_id, time_fo
 
 
 def exportar_para_excel(df):
-    """Exporta DataFrame para Excel com formatação"""
+    """Exporta DataFrame para Excel com formatação melhorada incluindo coluna Critério"""
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -960,57 +956,209 @@ def exportar_para_excel(df):
         workbook = writer.book
         worksheet = writer.sheets['Jogos e Estatísticas']
 
-        # Adicionar formatação
+        # ===== FORMATOS DE FORMATAÇÃO =====
+
+        # Formato do cabeçalho
         header_format = workbook.add_format({
             'bold': True,
             'text_wrap': True,
             'valign': 'top',
             'fg_color': '#D7E4BD',
-            'border': 1
+            'border': 1,
+            'font_size': 11
         })
 
         # Formato para time casa (verde claro)
         home_format = workbook.add_format({
             'bg_color': '#E8F5E9',
-            'border': 1
+            'border': 1,
+            'align': 'center'
         })
 
         # Formato para time fora (vermelho claro)
         away_format = workbook.add_format({
             'bg_color': '#FFEBEE',
-            'border': 1
+            'border': 1,
+            'align': 'center'
         })
 
-        # Formatar cabeçalho
-        for col_num, value in enumerate(df.columns.values):
-            worksheet.write(0, col_num, value, header_format)
+        # NOVOS FORMATOS PARA COLUNA CRITÉRIO
+        criterio_gols_format = workbook.add_format({
+            'bg_color': '#FFF3E0',  # Laranja claro para "Gols"
+            'border': 1,
+            'bold': True,
+            'align': 'center',
+            'font_color': '#E65100'  # Texto laranja escuro
+        })
 
-        # Identificar colunas de times
+        criterio_resultado_format = workbook.add_format({
+            'bg_color': '#E3F2FD',  # Azul claro para "Resultado/Gol"
+            'border': 1,
+            'bold': True,
+            'align': 'center',
+            'font_color': '#0D47A1'  # Texto azul escuro
+        })
+
+        # Formato para células normais
+        normal_format = workbook.add_format({
+            'border': 1,
+            'align': 'center'
+        })
+
+        # Formato para números (odds)
+        number_format = workbook.add_format({
+            'border': 1,
+            'align': 'center',
+            'num_format': '0.00'
+        })
+
+        # ===== IDENTIFICAR COLUNAS IMPORTANTES =====
+
         col_casa = None
         col_fora = None
-        for idx, col in enumerate(df.columns):
-            if 'Casa' in col or '🏠' in col:
-                col_casa = idx
-            elif 'Fora' in col or '✈️' in col:
-                col_fora = idx
+        col_criterio = None
+        col_pais = None
+        colunas_odds = []  # Para formatar odds como números
 
-        # Aplicar formatação nas células
+        for idx, col in enumerate(df.columns):
+            col_lower = col.lower()
+
+            # Identificar colunas de times
+            if 'casa' in col_lower and ('time' in col_lower or col.strip() == ' '):
+                col_casa = idx
+            elif 'fora' in col_lower and ('time' in col_lower or col.strip() == '  '):
+                col_fora = idx
+            # Identificar coluna critério
+            elif 'critério' in col_lower or 'criterio' in col_lower:
+                col_criterio = idx
+            # Identificar coluna país
+            elif 'país' in col_lower or 'pais' in col_lower:
+                col_pais = idx
+            # Identificar colunas de odds (para formatação numérica)
+            elif any(word in col_lower for word in ['odd', 'casa', 'fora', 'gols']) and 'time' not in col_lower:
+                if col not in ['Time Casa', 'Time Fora', 'Gols Casa', 'Gols Fora']:
+                    colunas_odds.append(idx)
+
+        # ===== FORMATAÇÃO DO CABEÇALHO =====
+
+        for col_num, value in enumerate(df.columns.values):
+            # Cabeçalho especial para coluna critério
+            if col_num == col_criterio:
+                criterio_header_format = workbook.add_format({
+                    'bold': True,
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'fg_color': '#FFE0B2',  # Laranja mais claro
+                    'border': 2,
+                    'font_size': 11,
+                    'font_color': '#E65100'
+                })
+                worksheet.write(0, col_num, value, criterio_header_format)
+            # Cabeçalho especial para coluna país
+            elif col_num == col_pais:
+                pais_header_format = workbook.add_format({
+                    'bold': True,
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'fg_color': '#E1F5FE',  # Azul claro
+                    'border': 2,
+                    'font_size': 11
+                })
+                worksheet.write(0, col_num, value, pais_header_format)
+            else:
+                worksheet.write(0, col_num, value, header_format)
+
+        # ===== FORMATAÇÃO DAS CÉLULAS DE DADOS =====
+
         for row_num in range(1, len(df) + 1):
             for col_num in range(len(df.columns)):
                 value = df.iloc[row_num - 1, col_num]
 
-                if col_num == col_casa:
+                # Formatação especial para coluna Critério
+                if col_num == col_criterio:
+                    if value == 'Gols':
+                        worksheet.write(row_num, col_num, value, criterio_gols_format)
+                    elif value == 'Resultado/Gol':
+                        worksheet.write(row_num, col_num, value, criterio_resultado_format)
+                    else:
+                        # Célula vazia ou outro valor
+                        worksheet.write(row_num, col_num, value, normal_format)
+
+                # Formatação para time casa (verde)
+                elif col_num == col_casa:
                     worksheet.write(row_num, col_num, value, home_format)
+
+                # Formatação para time fora (vermelho)
                 elif col_num == col_fora:
                     worksheet.write(row_num, col_num, value, away_format)
-                else:
-                    worksheet.write(row_num, col_num, value)
 
-        # Ajustar largura das colunas
+                # Formatação para colunas de odds (numéricas)
+                elif col_num in colunas_odds:
+                    try:
+                        # Tentar converter para float se for numérico
+                        numeric_value = float(value) if pd.notna(value) and str(value).replace('.', '').replace(',',
+                                                                                                                '').isdigit() else value
+                        worksheet.write(row_num, col_num, numeric_value, number_format)
+                    except (ValueError, TypeError):
+                        worksheet.write(row_num, col_num, value, normal_format)
+
+                # Formatação padrão para outras células
+                else:
+                    worksheet.write(row_num, col_num, value, normal_format)
+
+        # ===== AJUSTAR LARGURA DAS COLUNAS =====
+
         for i, col in enumerate(df.columns):
-            column_len = df[col].astype(str).str.len().max()
-            column_len = max(column_len, len(col)) + 2
-            worksheet.set_column(i, i, min(column_len, 50))  # Limitar largura máxima
+            # Largura especial para algumas colunas
+            if i == col_criterio:
+                worksheet.set_column(i, i, 15)  # Critério um pouco mais largo
+            elif 'Time' in col:
+                worksheet.set_column(i, i, 18)  # Times mais largos
+            elif col.strip() in [' ', '  ']:  # Colunas de escudo
+                worksheet.set_column(i, i, 5)  # Escudos pequenos
+            elif any(word in col.lower() for word in ['odd', 'gols']):
+                worksheet.set_column(i, i, 12)  # Odds médias
+            else:
+                # Largura automática baseada no conteúdo
+                column_len = max(
+                    df[col].astype(str).str.len().max() if not df[col].empty else 0,
+                    len(col)
+                ) + 3
+                worksheet.set_column(i, i, min(column_len, 25))  # Máximo 25 caracteres
+
+        # ===== ADICIONAR FILTROS =====
+
+        # Adicionar filtro automático
+        worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
+
+        # ===== CONGELAR PAINÉIS =====
+
+        # Congelar primeira linha (cabeçalho) e primeiras 3 colunas (Horário, País, Liga)
+        worksheet.freeze_panes(1, 3)
+
+        # ===== ADICIONAR TOTAIS/ESTATÍSTICAS =====
+
+        # Adicionar linha de totais se houver coluna critério
+        if col_criterio is not None:
+            total_row = len(df) + 2
+
+            # Contar critérios
+            criterios_count = df.iloc[:, col_criterio].value_counts()
+
+            # Escrever estatísticas
+            worksheet.write(total_row, 0, 'TOTAIS:', workbook.add_format({'bold': True, 'bg_color': '#F5F5F5'}))
+
+            col_atual = 1
+            for criterio, count in criterios_count.items():
+                if criterio == 'Gols':
+                    format_total = workbook.add_format({'bold': True, 'bg_color': '#FFF3E0', 'border': 1})
+                elif criterio == 'Resultado/Gol':
+                    format_total = workbook.add_format({'bold': True, 'bg_color': '#E3F2FD', 'border': 1})
+                else:
+                    format_total = workbook.add_format({'bold': True, 'bg_color': '#F5F5F5', 'border': 1})
+
+                worksheet.write(total_row, col_atual, f'{criterio}: {count}', format_total)
+                col_atual += 1
 
     output.seek(0)
     return output
@@ -1128,8 +1276,10 @@ if btn_buscar_dados:
     st.session_state.jogos_selecionados = selecoes_automaticas
     if selecoes_automaticas:
         st.info(f"🎯 {len(selecoes_automaticas)} jogo(s) selecionado(s) automaticamente baseado nos critérios:\n"
-                f"• Time casa odd ≥ 1.5 E Time fora marca gol (Over 0.5) ≥ 1.5\n"
-                f"• Time fora odd ≥ 1.5 E Time casa marca gol (Over 0.5) ≥ 1.5")
+                f"• Critério 1 (Resultado/Gol): Time casa odd ≥ 1.5 E Time fora marca gol (Over 0.5) ≥ 1.5\n"
+                f"• Critério 2 (Resultado/Gol): Time fora odd ≥ 1.5 E Time casa marca gol (Over 0.5) ≥ 1.5\n"
+                f"• Critério 3 (Gols): Time casa marca gol (Over 0.5) ≥ 1.5 E Time fora marca gol (Over 0.5) ≥ 1.5\n"
+                f"\n🏷️ Veja a coluna 'Critério' para identificar qual regra foi aplicada")
 
     st.session_state.dados_carregados = True
     st.rerun()
@@ -1175,12 +1325,15 @@ if st.session_state.dados_carregados:
             st.write("📸 = Escudos dos times (colunas sem título)")
             st.write("🟢 = Cor de fundo verde para time casa")
             st.write("🔴 = Cor de fundo vermelho para time fora")
+            st.write("🏁 = Coluna País antes da Liga")
+            st.write("🏷️ = Coluna Critério identifica a regra usada")  # ← NOVA INFORMAÇÃO
         with col2:
-            st.write("**Instruções:**")
-            st.write("✓ = Marque os jogos para buscar estatísticas")
-            st.write("🔗 = Clique nas linhas para ver estatísticas dos times")
-            st.write("⚔️ = Use 'Comparar Times' para ver ambos lado a lado")
-            st.write("📊 = Clique em 'Buscar Estatísticas' após selecionar")
+            st.write("**Critérios de Seleção Automática:**")
+            st.write("1️⃣ Casa ≥1.5 E Fora marca(0.5) ≥1.5 → 'Resultado/Gol'")  # ← ATUALIZADO
+            st.write("2️⃣ Fora ≥1.5 E Casa marca(0.5) ≥1.5 → 'Resultado/Gol'")  # ← ATUALIZADO
+            st.write("3️⃣ Casa marca(0.5) ≥1.5 E Fora marca(0.5) ≥1.5 → 'Gols'")  # ← ATUALIZADO
+            st.write("✓ = Marque jogos para buscar estatísticas")
+            st.write("🔗 = Clique nas linhas para ver estatísticas")
 
     # Processar DataFrame para exibição melhorada
     df_display = processar_dataframe_para_exibicao(df_filtrado_exibicao)
@@ -1201,11 +1354,11 @@ if st.session_state.dados_carregados:
 
     # Preparar colunas para exibição
     colunas_exibir = [
-        'Selecionar', 'id_jogo', 'horario', 'liga',
+        'Selecionar', 'id_jogo', 'horario', 'país', 'liga',  # ← PAÍS ADICIONADO
         'escudo_casa', 'Time Casa', 'escudo_fora', 'Time Fora',
         'odd_casa', 'odd_empate', 'odd_fora',
         'Gols Casa', 'Gols Fora',
-        'selecao_automatica'
+        'criterio_selecao', 'selecao_automatica'  # ← CRITÉRIO ADICIONADO
     ]
 
     # Configurar altura da tabela
@@ -1223,15 +1376,19 @@ if st.session_state.dados_carregados:
     event = st.dataframe(
         df_para_exibir[colunas_exibir].rename(columns={
             'selecao_automatica': 'Auto',
-            'escudo_casa': ' ',  # Espaço para escudo casa
-            'escudo_fora': '  ',  # Dois espaços para escudo fora
+            'criterio_selecao': 'Critério',
+            'escudo_casa': ' ',
+            'escudo_fora': '  ',
+            'país': 'País',  # ← ADICIONAR ESTA LINHA
         }),
         column_config={
-            "Selecionar": st.column_config.CheckboxColumn(
-                "✓",
-                help="Marque os jogos para buscar estatísticas",
+            # ... outras configurações ...
+            "País": st.column_config.TextColumn(  # ← NOVA CONFIGURAÇÃO
+                "País",
+                help="País da liga",
                 width="small"
             ),
+            "liga": st.column_config.TextColumn("Liga", help="Liga/Competição", width="medium"),
             "id_jogo": st.column_config.NumberColumn("ID", width="small"),
             "horario": st.column_config.TextColumn("Horário", width="small"),
             "liga": st.column_config.TextColumn("Liga", width="medium"),
@@ -1243,7 +1400,7 @@ if st.session_state.dados_carregados:
             "Time Casa": st.column_config.TextColumn(
                 "Time Casa",
                 help="Time da casa - Clique na linha para ver estatísticas",
-                width="large"
+                width="medium"
             ),
             "  ": st.column_config.ImageColumn(
                 "  ",  # Escudo fora
@@ -1253,13 +1410,18 @@ if st.session_state.dados_carregados:
             "Time Fora": st.column_config.TextColumn(
                 "Time Fora",
                 help="Time de fora - Clique na linha para ver estatísticas",
-                width="large"
+                width="medium"
             ),
             "odd_casa": st.column_config.NumberColumn("Odd Casa", format="%.2f", width="small"),
             "odd_empate": st.column_config.NumberColumn("Odd X", format="%.2f", width="small"),
             "odd_fora": st.column_config.NumberColumn("Odd Fora", format="%.2f", width="small"),
             "Gols Casa": st.column_config.TextColumn("Gols Casa", width="medium"),
             "Gols Fora": st.column_config.TextColumn("Gols Fora", width="medium"),
+            "Critério": st.column_config.TextColumn(
+                "Critério",
+                help="Tipo de critério: 'Gols' ou 'Resultado/Gol'",
+                width="small"
+            ),
             "Auto": st.column_config.CheckboxColumn(
                 "Auto",
                 help="Seleção automática pelos critérios",
@@ -1395,8 +1557,10 @@ if st.session_state.dados_carregados:
 
     # Colunas a serem exibidas na tabela final
     colunas_basicas = [
-        'horario', 'liga', 'escudo_casa', 'Time Casa', 'escudo_fora', 'Time Fora',
-        'odd_casa', 'odd_empate', 'odd_fora', 'Gols Casa', 'Gols Fora'
+        'id_jogo', 'horario', 'país', 'liga',
+        'escudo_casa', 'Time Casa', 'escudo_fora', 'Time Fora',
+        'odd_casa', 'odd_empate', 'odd_fora', 'Gols Casa', 'Gols Fora',
+        'criterio_selecao'
     ]
 
     colunas_estatisticas = [
@@ -1410,13 +1574,16 @@ if st.session_state.dados_carregados:
 
     colunas_para_mostrar = [col for col in todas_colunas if col in df_final_display.columns]
     df_final_renamed = df_final_display[colunas_para_mostrar].rename(columns={
+        'id_jogo': 'ID',
         'horario': 'Horário',
+        'país': 'País',
         'liga': 'Liga',
         'escudo_casa': ' ',  # Espaço para escudo casa
         'escudo_fora': '  ',  # Dois espaços para escudo fora
         'odd_casa': 'Odd Casa',
         'odd_empate': 'Odd X',
         'odd_fora': 'Odd Fora',
+        'criterio_selecao': 'Critério',
         'jogos': 'Jogos (C-F)',
         'vitorias': 'Vitórias (C-F)',
         'derrotas': 'Derrotas (C-F)',
@@ -1431,17 +1598,66 @@ if st.session_state.dados_carregados:
         with col_export1:
             excel_file = exportar_para_excel(df_final_renamed)
             st.download_button(
-                label="📥 Baixar Excel",
+                label="📥 Baixar Excel Completo",
                 data=excel_file,
-                file_name=f"odds_estatisticas_{data_selecionada.strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                file_name=f"odds_estatisticas_criterios_{data_selecionada.strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Excel com formatação especial para critérios e estatísticas completas"
             )
+
+        with col_export2:
+            # Botão adicional para exportar apenas jogos selecionados
+            if st.session_state.jogos_selecionados:
+                df_selecionados_raw = df_final_display[
+                    df_final_display['id_jogo'].isin(st.session_state.jogos_selecionados)]
+                colunas_para_mostrar_selecionados = [col for col in colunas_basicas + colunas_estatisticas if
+                                                     col in df_selecionados_raw.columns]
+                df_selecionados = df_selecionados_raw[colunas_para_mostrar_selecionados].rename(columns={
+                    'horario': 'Horário',
+                    'país': 'País',
+                    'liga': 'Liga',
+                    'escudo_casa': ' ',
+                    'escudo_fora': '  ',
+                    'odd_casa': 'Odd Casa',
+                    'odd_empate': 'Odd X',
+                    'odd_fora': 'Odd Fora',
+                    'criterio_selecao': 'Critério',
+                    'jogos': 'Jogos (C-F)',
+                    'vitorias': 'Vitórias (C-F)',
+                    'derrotas': 'Derrotas (C-F)',
+                    'gols_marcados': 'Gols Marc. (C-F)',
+                    'gols_sofridos': 'Gols Sofr. (C-F)',
+                    'jogos_sem_marcar': 'J.S.Marcar (C-F)'
+                }).fillna("N/A")
+
+                if not df_selecionados.empty:
+                    excel_selecionados = exportar_para_excel(df_selecionados)
+                    st.download_button(
+                        label="📋 Apenas Selecionados",
+                        data=excel_selecionados,
+                        file_name=f"jogos_selecionados_{data_selecionada.strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Excel apenas com jogos selecionados"
+                    )
+
+        with col_export3:
+            # Mostrar estatísticas rápidas
+            if 'Critério' in df_final_renamed.columns:
+                criterios_stats = df_final_renamed['Critério'].value_counts()
+                st.write("**Resumo dos Critérios:**")
+                for criterio, count in criterios_stats.items():
+                    if criterio:  # Não mostrar valores vazios
+                        if criterio == 'Gols':
+                            st.write(f"⚽ {criterio}: {count} jogos")
+                        elif criterio == 'Resultado/Gol':
+                            st.write(f"🎯 {criterio}: {count} jogos")
 
     # Mostrar tabela final
     st.markdown("### 📋 Resultados Finais")
 
     # Configurar exibição da tabela final
     column_config_final = {
+        "ID": st.column_config.NumberColumn("ID", width="small"),
         " ": st.column_config.ImageColumn(
             " ",
             help="Escudo do time da casa",

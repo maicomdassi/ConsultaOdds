@@ -5,7 +5,7 @@ from datetime import datetime, date
 import os
 import time
 import pytz
-from collections import defaultdict
+
 
 from config.settings import settings
 from config.database import supabase
@@ -39,16 +39,6 @@ BOOKMAKERS = {
 # Fuso horário de Brasília
 TIMEZONE_BRASILIA = pytz.timezone('America/Sao_Paulo')
 
-
-def obter_temporada_atual(data_selecionada):
-    """Determina a temporada atual baseada na data selecionada"""
-    ano = data_selecionada.year
-    mes = data_selecionada.month
-
-    if mes <= 7:
-        return ano - 1
-    else:
-        return ano
 
 
 def verificar_jogos_salvos_hoje(data_selecionada):
@@ -532,13 +522,13 @@ def extrair_odds_por_id(dados_odds, id_aposta_desejado):
             break
     return odds_extraidas
 
-
-def verificar_selecao_automatica(row):
+def identificar_criterio_selecao(row):
     """
-    CORRIGIDO: Verifica se uma linha deve ser selecionada automaticamente
-    Marca quando:
-    1. Time casa tem odd >= 1.5 E time fora marca gol (over 0.5) >= 1.5
-    2. Time fora tem odd >= 1.5 E time casa marca gol (over 0.5) >= 1.5
+    Identifica qual critério foi usado para seleção automática
+    Retorna:
+    - 'Resultado/Gol' para critérios 1 e 2 (vitória + gol adversário)
+    - 'Gols' para critério 3 (ambos marcam)
+    - None se não atende nenhum critério
     """
     try:
         odd_casa = row.get('odd_casa')
@@ -560,11 +550,32 @@ def verificar_selecao_automatica(row):
             if float(odd_fora) >= 1.5 and "0.5" in legenda_gols_casa and float(odd_gols_casa) >= 1.5:
                 condicao2 = True
 
-        # Retorna True se qualquer uma das condições for verdadeira
-        return condicao1 or condicao2
+        # Condição 3: Casa marca (over 0.5 >= 1.5) E Fora marca (over 0.5 >= 1.5)
+        condicao3 = False
+        if odd_gols_casa and odd_gols_fora and legenda_gols_casa and legenda_gols_fora:
+            casa_marca = "0.5" in legenda_gols_casa and float(odd_gols_casa) >= 1.5
+            fora_marca = "0.5" in legenda_gols_fora and float(odd_gols_fora) >= 1.5
+            if casa_marca and fora_marca:
+                condicao3 = True
+
+        # Prioridade: Critério 3 (mais específico) > Critérios 1 e 2
+        if condicao3:
+            return 'Gols'
+        elif condicao1 or condicao2:
+            return 'Resultado/Gol'
+        else:
+            return None
 
     except (ValueError, TypeError):
-        return False
+        return None
+
+def verificar_selecao_automatica(row):
+    """
+    ATUALIZADO: Verifica se uma linha deve ser selecionada automaticamente
+    Usa a função identificar_criterio_selecao para determinar se há critério atendido
+    """
+    criterio = identificar_criterio_selecao(row)
+    return criterio is not None
 
 
 def processar_dados_jogos_e_odds(dados_jogos, dados_odds, liga_selecionada=None, filtrar_sem_odds_gols=False):
@@ -641,6 +652,8 @@ def processar_dados_jogos_e_odds(dados_jogos, dados_odds, liga_selecionada=None,
                 if not (info_jogo['odd_gols_casa'] and info_jogo['odd_gols_fora']):
                     continue
 
+            criterio_usado = identificar_criterio_selecao(info_jogo)
+            info_jogo['criterio_selecao'] = criterio_usado if criterio_usado else ''
             info_jogo['selecao_automatica'] = verificar_selecao_automatica(info_jogo)
 
             lista_jogos.append(info_jogo)
@@ -661,8 +674,12 @@ def buscar_estatisticas_para_jogos_selecionados(df_jogos_original, jogos_selecio
             gols_marcados='N/A', gols_sofridos='N/A', jogos_sem_marcar='N/A'
         )
 
+
     # Criar uma cópia do DataFrame original para modificação
     df_com_stats = df_jogos_original.copy()
+
+    if 'criterio_selecao' not in df_com_stats.columns:
+        df_com_stats['criterio_selecao'] = ''
 
     # Garantir que as colunas de estatísticas existam, inicializando com N/A
     for col in ['jogos', 'vitorias', 'derrotas', 'gols_marcados', 'gols_sofridos', 'jogos_sem_marcar']:
